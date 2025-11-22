@@ -251,89 +251,42 @@ impl Brachistochrone {
                 + (2. * G * (y_start_scaled - x_k_scaled.y)).sqrt())
     }
 
-    fn solve_impl(&mut self, k: usize, x_k: Vector2<f32>) {
-        let (v_memo, u_memo) = self.memo[(k, x_k)];
-
-        if u_memo != UNINIT {
-            return;
-        }
-
-        let mut min_v = f32::INFINITY;
-        let mut chosen_u = UNINIT;
-
-        let bounds = 0.0..=(self.n as f32);
-
-        for (u_idx, u) in U.iter().enumerate() {
-            let x_k_next = x_k + u;
-
-            if !bounds.contains(&x_k_next.x) || !bounds.contains(&x_k_next.y) {
-                continue;
-            }
-
-            self.solve_impl(k + 1, x_k_next);
-            let (v_next, _) = self.memo[(k + 1, x_k_next)];
-
-            let c = self.cost(x_k, u);
-            let v_cur = c + v_next;
-
-            if v_cur < min_v {
-                min_v = v_cur;
-                chosen_u = u_idx as u8;
-            }
-        }
-
-        self.memo[(k, x_k)] = (min_v, chosen_u);
-    }
-
     pub fn solve(&mut self) {
-        for x in 0..=self.n {
-            for y in 0..=self.n {
-                let x_k = Vector2::<f32>::new(x as f32, y as f32);
-                self.memo[(self.time_horizon, x_k)] = (f32::INFINITY, TERMINAL);
-            }
-        }
+        let bounds = 0.0..=(self.n as f32);
 
         self.memo[(self.time_horizon, self.end)] = (0., TERMINAL);
 
-        self.solve_impl(0, self.start);
+        for k in (0..self.time_horizon).rev() {
+            for x in (0..=self.n).rev() {
+                for y in (0..=self.n).rev() {
+                    let x_k = Vector2::<f32>::new(x as f32, y as f32);
+
+                    let mut min_v = f32::INFINITY;
+                    let mut chosen_u = UNINIT;
+
+                    for (u_idx, u) in U.iter().enumerate() {
+                        let x_k_next = x_k + u;
+
+                        if !bounds.contains(&x_k_next.x) || !bounds.contains(&x_k_next.y) {
+                            continue;
+                        }
+
+                        let (v_next, _) = self.memo[(k + 1, x_k_next)];
+
+                        let c = self.cost(x_k, u);
+                        let v_cur = c + v_next;
+
+                        if v_cur < min_v {
+                            min_v = v_cur;
+                            chosen_u = u_idx as u8;
+                        }
+                    }
+
+                    self.memo[(k, x_k)] = (min_v, chosen_u);
+                }
+            }
+        }
     }
-
-    // pub fn solve(&mut self) {
-    //     let bounds = 0.0..=(self.n as f32);
-
-    //     self.memo[(self.time_horizon, self.end)] = (0., TERMINAL);
-
-    //     for k in (0..self.time_horizon).rev() {
-    //         for x in (0..=self.n).rev() {
-    //             for y in (0..=self.n).rev() {
-    //                 let x_k = Vector2::<f32>::new(x as f32, y as f32);
-
-    //                 let mut min_v = f32::INFINITY;
-    //                 let mut chosen_u = UNINIT;
-
-    //                 for (u_idx, u) in U.iter().enumerate() {
-    //                     let x_k_next = x_k + u;
-
-    //                     if !bounds.contains(&x_k_next.x) || !bounds.contains(&x_k_next.y) {
-    //                         continue;
-    //                     }
-
-    //                     let (v_next, _) = self.memo[(k + 1, x_k_next)];
-
-    //                     let c = self.cost(x_k, u);
-    //                     let v_cur = c + v_next;
-
-    //                     if v_cur < min_v {
-    //                         min_v = v_cur;
-    //                         chosen_u = u_idx as u8;
-    //                     }
-    //                 }
-
-    //                 self.memo[(k, x_k)] = (min_v, chosen_u);
-    //             }
-    //         }
-    //     }
-    // }
 
     pub fn path_iter(&self, start: Vector2<f32>) -> impl Iterator<Item = (f32, Vector2<f32>)> {
         BrachistochronePathIterator {

@@ -5,10 +5,10 @@ mod brachistochrone;
 use brachistochrone::Brachistochrone;
 
 fn main() {
-    let start = Vector2::<f32>::new(0., 20.);
-    let end = Vector2::<f32>::new(20., 0.);
+    let start = Vector2::<f32>::new(0., 100.);
+    let end = Vector2::<f32>::new(100., 0.);
 
-    let mut b = Brachistochrone::new(20, 10, 1., start, end);
+    let mut b = Brachistochrone::new(100, 50, 0.1, start, end);
 
     b.solve();
 
