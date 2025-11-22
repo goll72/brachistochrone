@@ -133,6 +133,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Start,
                     column_gap: px(15),
+                    ..Default::default()
                 },
                 Text::new(l10n.get("grid_res")),
                 (slider(
