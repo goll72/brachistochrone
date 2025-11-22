@@ -6,7 +6,7 @@ all: $(SCRIPT)
 serve: $(SCRIPT)
 	python -m http.server -d web
 
-$(WASM): $(wildcard src/*.rs)
+$(WASM): $(wildcard src/*.rs) Cargo.toml Cargo.lock
 	cargo build --release --target wasm32-unknown-unknown
 
 $(SCRIPT): $(WASM)

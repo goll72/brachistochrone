@@ -4,7 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.16.1"
-bevy_rapier2d = { version = "0.31.0", features = ["debug-render-2d"] }
 nalgebra = "0.34.1"
 rapier2d = "0.31.0"
+serde = "1.0.228"
+serde_json = "1.0.145"
+
+[dependencies.web-sys]
+version = "0.3.82"
+features = ["Window", "Document"]
+
+# Use bevy 0.17 because new and recent and UI widgets and ...
+[dependencies.bevy]
+version = "0.17.3"
+features = ["experimental_bevy_feathers"]
+
+[dependencies.bevy_rapier2d]
+git = "https://github.com/Deniskore/bevy_rapier.git"
+branch = "bevy-0.17"
+features = ["debug-render-2d"]

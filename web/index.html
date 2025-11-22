@@ -3,6 +3,8 @@
 
 <head>
   <meta charset="utf-8" />
+  <title>Brachistochrone DP Demo</title>
+
   <style>
     body {
       margin: 0;
@@ -60,13 +62,15 @@
 
 <body>
   <script type="module">
-    import init from "/wasm/brachistochrone.js";
+    import init from "./wasm/brachistochrone.js";
     init();
   </script>
   <!-- The progress bar has to be the last child so the canvas sibling selector works -->
   <div class="progress-bar">
     <div></div>
   </div>
+
+  <!-- The WebAssembly code will create a canvas as the last child of the body element when it loads -->
 </body>
 
 </html>
