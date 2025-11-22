@@ -1,3 +1,7 @@
+use std::fs::File;
+use std::io::Write;
+use std::time::SystemTime;
+
 use nalgebra::Vector2;
 
 mod brachistochrone;
@@ -5,17 +9,45 @@ mod brachistochrone;
 use brachistochrone::Brachistochrone;
 
 fn main() {
-    let start = Vector2::<f32>::new(0., 100.);
-    let end = Vector2::<f32>::new(100., 0.);
+    let ks = [
+        (10, 3.),
+        (20, 5.),
+        (50, 7.),
+        (100, 15.),
+        (150, 30.),
+        (200, 40.),
+        (500, 50.),
+    ];
 
-    let mut b = Brachistochrone::new(100, 50, 0.1, start, end);
+    for (k, inc) in ks {
+        let mut start = Vector2::<f32>::new(0., k as f32);
+        let end = Vector2::<f32>::new(k as f32, 0.);
 
-    b.solve();
+        let mut b = Brachistochrone::new(k, 10. / (k as f32), start, end);
 
-    for (t, r) in b.path_iter(start) {
-        println!(
-            "A brachistochrone-like path would take {t:0.5} seconds to get to {end:?} starting from {:?}, {:?}",
-            r.x, r.y
-        );
+        println!("Solving Brachistochrone for n={k}");
+
+        let before = SystemTime::now();
+        b.solve();
+
+        println!(" >> Took {}s", before.elapsed().unwrap().as_secs_f64());
+
+        while start.x < k as f32 / 2. {
+            let path = format!("brac-{}-x{}.csv", k, start.x);
+            println!(
+                " :: Iterating path starting from [{:2.2}, {:2.2}] -> {path}",
+                start.x, start.y
+            );
+
+            let mut f = File::options().write(true).create(true).open(path).unwrap();
+
+            for (t, r) in b.path_iter(start) {
+                write!(f, "{},{},{}\n", r.x, r.y, t).unwrap();
+            }
+
+            write!(f, "{},{},{}\n", end.x, end.y, 0).unwrap();
+
+            start.x += inc;
+        }
     }
 }

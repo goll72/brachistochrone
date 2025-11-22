@@ -1617,7 +1617,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "brac-dp"
+name = "brachistochrone"
 version = "0.1.0"
 dependencies = [
  "bevy",

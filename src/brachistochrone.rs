@@ -223,13 +223,15 @@ pub struct Brachistochrone {
 }
 
 impl Brachistochrone {
-    pub fn new(
-        n: usize,
-        time_horizon: usize,
-        mu: f32,
-        start: Vector2<f32>,
-        end: Vector2<f32>,
-    ) -> Brachistochrone {
+    pub fn new(n: usize, mu: f32, start: Vector2<f32>, end: Vector2<f32>) -> Brachistochrone {
+        // "Tighter" (not really) lower bound for time horizon found by approximating from experimental data
+        let time_horizon = match n {
+            1000.. => n / 5,
+            500.. => n / 4,
+            50.. => n / 3,
+            _ => n / 2,
+        };
+
         Self {
             n,
             time_horizon,
