@@ -191,13 +191,15 @@ fn show_simulation_time(
         return;
     };
 
+    let end = coords(params.end.into(), &params);
+
     // Add the ball's radius, since the ball's position corresponds to its center
     let dist = main_body_pos
         .translation
         .truncate()
-        .distance_squared(coords(params.end.into(), &params) + Vec2::new(0., MAIN_BODY_RADIUS));
+        .distance_squared(end + Vec2::new(0., MAIN_BODY_RADIUS));
 
-    if dist < PX_PER_M / 2. {
+    if dist < PX_PER_M / 2. || main_body_pos.translation.x > end.x + PX_PER_M / 6. {
         *sim_time = SimulationTime::Frozen;
     }
 }
