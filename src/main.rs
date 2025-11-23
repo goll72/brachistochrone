@@ -1,4 +1,5 @@
 #![feature(iter_map_windows)]
+#![feature(more_float_constants)]
 #![feature(stmt_expr_attributes)]
 
 use std::collections::HashMap;
@@ -57,7 +58,11 @@ struct BrachistochronePath;
 /// Simulation time UI element
 /// Keeps track of the time instant when the simulation began
 #[derive(Component)]
-struct SimulationTime(Option<Instant>);
+enum SimulationTime {
+    Valid(Instant),
+    Invalid,
+    Frozen,
+}
 
 #[derive(Resource, Deserialize)]
 struct Localization(HashMap<String, String>);
@@ -72,6 +77,7 @@ impl Localization {
 }
 
 const PX_PER_M: f32 = 50.;
+const MAIN_BODY_RADIUS: f32 = PX_PER_M * f32::consts::FRAC_1_SQRT_PI;
 
 fn main() {
     let mut app = App::new();
@@ -151,17 +157,24 @@ fn setup(
     commands.spawn(simulation_time_ui());
 }
 
-fn show_simulation_time(l10n: Res<Localization>, mut query: Query<(&mut Text, &SimulationTime)>) {
-    let Ok((mut text, sim_time)) = query.single_mut() else {
+fn show_simulation_time(
+    params: Res<BrachistochroneParams>,
+    l10n: Res<Localization>,
+    mut sim_time_query: Query<(&mut Text, &mut SimulationTime)>,
+    main_body_pos_query: Query<&Transform, With<MainBody>>,
+) {
+    let Ok((mut text, mut sim_time)) = sim_time_query.single_mut() else {
         return;
     };
 
-    let Some(sim_time) = sim_time.0 else {
-        text.clear();
-        return;
+    let elapsed = match *sim_time {
+        SimulationTime::Valid(sim_time) => sim_time.elapsed(),
+        SimulationTime::Invalid => {
+            text.clear();
+            return;
+        }
+        SimulationTime::Frozen => return,
     };
-
-    let elapsed = sim_time.elapsed();
 
     let millis = elapsed.as_millis();
     let secs = millis / 1000;
@@ -173,6 +186,20 @@ fn show_simulation_time(l10n: Res<Localization>, mut query: Query<(&mut Text, &S
         (millis % 1000) / 10,
         l10n.get("inaccuracy_disclaimer")
     );
+
+    let Ok(main_body_pos) = main_body_pos_query.single() else {
+        return;
+    };
+
+    // Add the ball's radius, since the ball's position corresponds to its center
+    let dist = main_body_pos
+        .translation
+        .truncate()
+        .distance_squared(coords(params.end.into(), &params) + Vec2::new(0., MAIN_BODY_RADIUS));
+
+    if dist < PX_PER_M / 2. {
+        *sim_time = SimulationTime::Frozen;
+    }
 }
 
 #[derive(Component)]
@@ -398,7 +425,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                     text.replace_range(.., l10n.get("start"));
                                     *marker = StartButtonMarker::Start;
 
-                                    *sim_time = SimulationTime(None);
+                                    *sim_time = SimulationTime::Invalid;
 
                                     if let Ok(id) = main_body_query.single() {
                                         commands.entity(id).despawn();
@@ -430,7 +457,7 @@ fn simulation_time_ui() -> impl Bundle {
         children![(
             Text::new(""),
             TextFont::from_font_size(16.),
-            SimulationTime(None)
+            SimulationTime::Invalid
         )],
     )
 }
@@ -517,10 +544,9 @@ fn consume_brachistochrone_path(
 
     // Move the ball up and to the right a bit, otherwise it would spawn in the middle of the Brachistochrone
     // path, leading to it clipping up or down ("falling through") unpredictably or getting stuck
-    let start =
-        coords(params.start.into(), &params) + Vec2::new(PX_PER_M / f32::consts::PI.sqrt(), 0.);
+    let start = coords(params.start.into(), &params) + Vec2::new(MAIN_BODY_RADIUS, 0.);
 
-    let mesh = meshes.add(Circle::new(PX_PER_M / f32::consts::PI.sqrt()));
+    let mesh = meshes.add(Circle::new(MAIN_BODY_RADIUS));
     let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
 
     commands.spawn((
@@ -528,7 +554,7 @@ fn consume_brachistochrone_path(
         MeshMaterial2d(material),
         RigidBody::Dynamic,
         Transform::from_xyz(start.x, start.y, 0.),
-        Collider::ball(PX_PER_M / f32::consts::PI.sqrt()),
+        Collider::ball(MAIN_BODY_RADIUS),
         Friction::new(params.friction),
         MainBody,
     ));
@@ -541,6 +567,6 @@ fn consume_brachistochrone_path(
     }
 
     if let Ok(mut sim_time) = sim_time_query.single_mut() {
-        *sim_time = SimulationTime(Some(Instant::now()));
+        *sim_time = SimulationTime::Valid(Instant::now());
     }
 }
