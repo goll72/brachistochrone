@@ -164,13 +164,14 @@ fn show_simulation_time(l10n: Res<Localization>, mut query: Query<(&mut Text, &S
 
     let elapsed = sim_time.elapsed();
 
-    let secs = elapsed.as_secs();
     let millis = elapsed.as_millis();
+    let secs = millis / 1000;
 
     text.0 = format!(
-        "{:02}:{:02.03} [{}]",
+        "{:02}:{:02}.{:02} [{}]",
         secs / 60,
         secs % 60,
+        (millis % 1000) / 10,
         l10n.get("inaccuracy_disclaimer")
     );
 }
@@ -464,12 +465,12 @@ fn generate_brachistochrone_path(
 
         brac.path_iter(params.start)
             .map_windows(|[(_, start), (_, end)]| {
-                let start = coords(Vec2::from(*start), &params);
-                let end = coords(Vec2::from(*end), &params);
+                // let start = coords(Vec2::from(*start), &params);
+                // let end = coords(Vec2::from(*end), &params);
 
                 (
                     RigidBody::Fixed,
-                    Collider::segment(start, end),
+                    Collider::segment(Vec2::from(*start), Vec2::from(*end)),
                     BrachistochronePath,
                 )
             })
