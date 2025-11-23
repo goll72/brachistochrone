@@ -114,7 +114,6 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
         PX_PER_M,
     ))
-    .add_plugins(RapierDebugRenderPlugin::default())
     .insert_resource(BrachistochroneParams {
         start: Vector2::new(0., 10.),
         end: Vector2::new(10., 0.),
@@ -468,15 +467,23 @@ fn generate_brachistochrone_path(
                 let start = coords(Vec2::from(*start), &params);
                 let end = coords(Vec2::from(*end), &params);
 
-                (
-                    RigidBody::Fixed,
-                    Collider::segment(start, end),
-                    BrachistochronePath,
-                )
+                (start, end)
             })
-            .for_each(|x| {
+            .for_each(|(start, end)| {
                 command_queue.push(move |world: &mut World| {
-                    world.spawn(x);
+                    let mut meshes = world.resource_mut::<Assets<Mesh>>();
+                    let mesh = meshes.add(Segment2d::new(start, end));
+
+                    let mut materials = world.resource_mut::<Assets<ColorMaterial>>();
+                    let material = materials.add(Color::srgba(1., 1., 1., 1.));
+
+                    world.spawn((
+                        Mesh2d(mesh),
+                        MeshMaterial2d(material),
+                        RigidBody::Fixed,
+                        Collider::segment(start, end),
+                        BrachistochronePath,
+                    ));
                 })
             });
 
@@ -493,6 +500,8 @@ fn consume_brachistochrone_path(
     task: Option<ResMut<GenerateBrachistochronePath>>,
     mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
     mut sim_time_query: Query<&mut SimulationTime>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let Some(mut task) = task else {
         return;
@@ -509,12 +518,18 @@ fn consume_brachistochrone_path(
     let start =
         coords(params.start.into(), &params) + Vec2::new(PX_PER_M / f32::consts::PI.sqrt(), 0.);
 
-    commands
-        .spawn(RigidBody::Dynamic)
-        .insert(Transform::from_xyz(start.x, start.y, 0.))
-        .insert(Collider::ball(PX_PER_M / f32::consts::PI.sqrt()))
-        .insert(Friction::new(params.friction))
-        .insert(MainBody);
+    let mesh = meshes.add(Circle::new(PX_PER_M / f32::consts::PI.sqrt()));
+    let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
+
+    commands.spawn((
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+        RigidBody::Dynamic,
+        Transform::from_xyz(start.x, start.y, 0.),
+        Collider::ball(PX_PER_M / f32::consts::PI.sqrt()),
+        Friction::new(params.friction),
+        MainBody,
+    ));
 
     commands.append(&mut command_queue);
 
