@@ -37,6 +37,10 @@ struct BrachistochroneParams {
     grid_resolution: u8,
 }
 
+/// The main body under simulation (rolling on the Brachistochrone-like curve)
+#[derive(Component)]
+struct MainBody;
+
 #[derive(Resource, Deserialize)]
 struct Localization(HashMap<String, String>);
 
@@ -111,6 +115,12 @@ fn main() {
 fn setup(mut commands: Commands, params: Res<BrachistochroneParams>, l10n: Res<Localization>) {
     commands.spawn(Camera2d::default());
     commands.spawn(brachistochrone_ui(params, l10n));
+}
+
+#[derive(Component)]
+enum StartButtonMarker {
+    Start,
+    Reset,
 }
 
 fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization>) -> impl Bundle {
@@ -251,10 +261,25 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     button(
                         ButtonProps::default(),
                         (),
-                        Spawn((Text::new(l10n.get("start")), ThemedText))
+                        Spawn((Text::new(l10n.get("start")), ThemedText, StartButtonMarker::Start))
                     ),
-                    observe(|_: On<Activate>| {
-                        info!("kys");
+                    observe(|_: On<Activate>, l10n: Res<Localization>, mut query: Query<(&mut Text, &mut StartButtonMarker)>| {
+                        if let Ok((mut text, mut marker)) = query.single_mut() {
+                            match *marker {
+                                StartButtonMarker::Start => {
+                                    text.replace_range(.., l10n.get("reset"));
+                                    *marker = StartButtonMarker::Reset;
+
+                                    // XXX: Spawn `MainBody`
+                                }
+                                StartButtonMarker::Reset => {
+                                    text.replace_range(.., l10n.get("start"));
+                                    *marker = StartButtonMarker::Start;
+
+                                    // XXX: Reset
+                                }
+                            }
+                        }
                     })
                 )]
             )
