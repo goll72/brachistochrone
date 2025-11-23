@@ -410,13 +410,14 @@ fn consume_brachistochrone_path(
 
     commands.remove_resource::<GenerateBrachistochronePath>();
 
-    let start = coords(params.start.into(), &params);
+    // Move the ball up and to the right a bit, otherwise it would spawn in the middle of the Brachistochrone
+    // path, leading to it clipping up or down ("falling through") unpredictably or getting stuck
+    //
+    let start = coords(params.start.into(), &params) + 15.;
 
-    // Move the ball up a bit, otherwise it would spawn in the middle of the Brachistochrone
-    // path, leading to it clipping up or down ("falling through") unpredictably
     commands
         .spawn(RigidBody::Dynamic)
-        .insert(Transform::from_xyz(start.x, start.y + 15., 0.))
+        .insert(Transform::from_xyz(start.x, start.y, 0.))
         .insert(Collider::ball(10.))
         .insert(MainBody);
 
