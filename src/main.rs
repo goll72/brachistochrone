@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use bevy::asset::load_internal_binary_asset;
 use bevy::ecs::world::CommandQueue;
 use bevy::input_focus::tab_navigation::TabGroup;
+use bevy::platform::time::Instant;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
 use bevy::ui_widgets::{
     Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
@@ -40,14 +41,21 @@ struct BrachistochroneParams {
     grid_resolution: u8,
     // This value is taken from the initial window size
     viewport_size: f32,
+    friction: f32,
 }
 
 /// The main body under simulation (rolling on the Brachistochrone-like curve)
 #[derive(Component)]
 struct MainBody;
 
+/// Segments of the Brachistochrone path/curve
 #[derive(Component)]
 struct BrachistochronePath;
+
+/// Simulation time UI element
+/// Keeps track of the time instant when the simulation began
+#[derive(Component)]
+struct SimulationTime(Option<Instant>);
 
 #[derive(Resource, Deserialize)]
 struct Localization(HashMap<String, String>);
@@ -109,12 +117,14 @@ fn main() {
         start: Vector2::new(0., 10.),
         end: Vector2::new(10., 0.),
         grid_resolution: 50,
+        friction: 0.,
         ..Default::default()
     })
     .insert_resource(l10n)
     .insert_resource(UiTheme(create_dark_theme()))
     .add_systems(Startup, setup)
-    .add_systems(Update, consume_brachistochrone_path);
+    .add_systems(Update, consume_brachistochrone_path)
+    .add_systems(Update, show_simulation_time);
 
     load_internal_binary_asset!(
         app,
@@ -137,6 +147,25 @@ fn setup(
 
     commands.spawn(Camera2d::default());
     commands.spawn(brachistochrone_ui(params.into(), l10n));
+    commands.spawn(simulation_time_ui());
+}
+
+fn show_simulation_time(mut query: Query<(&mut Text, &SimulationTime)>) {
+    let Ok((mut text, sim_time)) = query.single_mut() else {
+        return;
+    };
+
+    let Some(sim_time) = sim_time.0 else {
+        text.clear();
+        return;
+    };
+
+    let elapsed = sim_time.elapsed();
+
+    let secs = elapsed.as_secs();
+    let millis = elapsed.as_millis();
+
+    text.0 = format!("{:02}:{:02}.{:.03}", secs / 60, secs % 60, millis);
 }
 
 #[derive(Component)]
@@ -152,6 +181,7 @@ fn coords(r: Vec2, params: &BrachistochroneParams) -> Vec2 {
     r * PX_PER_M - params.viewport_size / 2.
 }
 
+/// Menu on the top right corner to allow setting simulation parameters as well as starting/stopping the simulation
 fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization>) -> impl Bundle {
     macro_rules! label {
         ($translation_key:literal) => {
@@ -224,11 +254,11 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             padding: UiRect::all(px(10)),
             width: px(400),
             column_gap: px(30),
-            align_self: AlignSelf::End,
+            align_self: AlignSelf::Start,
             justify_self: JustifySelf::End,
             display: Display::Grid,
             grid_template_columns: vec![GridTrack::min_content(), GridTrack::fr(1.)],
-            grid_template_rows: vec![RepeatedGridTrack::auto(9)],
+            grid_template_rows: vec![RepeatedGridTrack::auto(11)],
             ..Default::default()
         },
         TabGroup::default(),
@@ -253,6 +283,30 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                          commands: Commands,
                          mut params: ResMut<BrachistochroneParams>| {
                             params.grid_resolution = change.value as u8;
+                            slider_self_update(change, commands);
+                        }
+                    )
+                )]
+            ),
+            spacer!(),
+            label!("friction"),
+            (
+                // [slider]
+                Node::default(),
+                children![(
+                    slider(
+                        SliderProps {
+                            min: 0.,
+                            max: 0.9,
+                            value: params.friction
+                        },
+                        (SliderStep(0.05), SliderPrecision(2))
+                    ),
+                    observe(
+                        |change: On<ValueChange<f32>>,
+                         commands: Commands,
+                         mut params: ResMut<BrachistochroneParams>| {
+                            params.friction = change.value;
                             slider_self_update(change, commands);
                         }
                     )
@@ -312,18 +366,27 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                              gen_path_task: Option<ResMut<GenerateBrachistochronePath>>,
                              mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
                              main_body_query: Query<Entity, With<MainBody>>,
-                             path_segments_query: Query<Entity, With<BrachistochronePath>>| {
+                             path_segments_query: Query<Entity, With<BrachistochronePath>>,
+                             mut sim_time_query: Query<&mut SimulationTime>| {
+                        let Ok(mut sim_time) = sim_time_query.single_mut() else {
+                            return;
+                        };
+
                         if let Ok((mut text, mut marker)) = marker_query.single_mut() {
                             match *marker {
                                 StartButtonMarker::Start => {
                                     text.replace_range(.., "...");
                                     *marker = StartButtonMarker::Waiting;
 
+                                    // The simulation time should only be set once the path has actually been
+                                    // generated, i.e. in `consume_brachistochrone_path`
                                     generate_brachistochrone_path(params, commands, gen_path_task);
                                 }
                                 StartButtonMarker::Reset => {
                                     text.replace_range(.., l10n.get("start"));
                                     *marker = StartButtonMarker::Start;
+
+                                    *sim_time = SimulationTime(None);
 
                                     if let Ok(id) = main_body_query.single() {
                                         commands.entity(id).despawn();
@@ -340,6 +403,23 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 )]
             )
         ],
+    )
+}
+
+/// UI element on the bottom left corner to display the elapsed simulation time
+fn simulation_time_ui() -> impl Bundle {
+    (
+        Node {
+            margin: UiRect::all(px(20)),
+            align_self: AlignSelf::End,
+            justify_self: JustifySelf::Start,
+            ..Default::default()
+        },
+        children![(
+            Text::new(""),
+            TextFont::from_font_size(16.),
+            SimulationTime(None)
+        )],
     )
 }
 
@@ -399,6 +479,7 @@ fn consume_brachistochrone_path(
     mut commands: Commands,
     task: Option<ResMut<GenerateBrachistochronePath>>,
     mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
+    mut sim_time_query: Query<&mut SimulationTime>,
 ) {
     let Some(mut task) = task else {
         return;
@@ -412,13 +493,13 @@ fn consume_brachistochrone_path(
 
     // Move the ball up and to the right a bit, otherwise it would spawn in the middle of the Brachistochrone
     // path, leading to it clipping up or down ("falling through") unpredictably or getting stuck
-    //
     let start = coords(params.start.into(), &params) + 15.;
 
     commands
         .spawn(RigidBody::Dynamic)
         .insert(Transform::from_xyz(start.x, start.y, 0.))
         .insert(Collider::ball(10.))
+        .insert(Friction::new(params.friction))
         .insert(MainBody);
 
     commands.append(&mut command_queue);
@@ -426,5 +507,9 @@ fn consume_brachistochrone_path(
     if let Ok((mut text, mut marker)) = marker_query.single_mut() {
         text.replace_range(.., l10n.get("reset"));
         *marker = StartButtonMarker::Reset;
+    }
+
+    if let Ok(mut sim_time) = sim_time_query.single_mut() {
+        *sim_time = SimulationTime(Some(Instant::now()));
     }
 }
