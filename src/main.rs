@@ -1,6 +1,9 @@
 #![feature(iter_map_windows)]
 #![feature(stmt_expr_attributes)]
 
+use std::collections::HashMap;
+use std::f32;
+
 use nalgebra::Vector2;
 
 use bevy::prelude::*;
@@ -27,8 +30,6 @@ use bevy_rapier2d::prelude::*;
 
 use serde::Deserialize;
 
-use std::collections::HashMap;
-
 #[allow(dead_code)]
 mod brachistochrone;
 #[allow(unused_imports)]
@@ -39,8 +40,9 @@ struct BrachistochroneParams {
     start: Vector2<f32>,
     end: Vector2<f32>,
     grid_resolution: u8,
-    // This value is taken from the initial window size
-    viewport_size: f32,
+    // These values are taken from the initial window size
+    viewport_width: f32,
+    viewport_height: f32,
     friction: f32,
 }
 
@@ -69,7 +71,7 @@ impl Localization {
     }
 }
 
-const PX_PER_M: f32 = 100.;
+const PX_PER_M: f32 = 50.;
 
 fn main() {
     let mut app = App::new();
@@ -142,8 +144,8 @@ fn setup(
     l10n: Res<Localization>,
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    // XXX: this is going to lead to a lot of wasted space on vertical screens (e.g. mobile)
-    params.viewport_size = f32::min(window.width(), window.height());
+    params.viewport_width = window.width();
+    params.viewport_height = window.height();
 
     commands.spawn(Camera2d::default());
     commands.spawn(brachistochrone_ui(params.into(), l10n));
@@ -177,8 +179,13 @@ enum StartButtonMarker {
 
 /// Transforms coordinates from the physics simulation space to the Bevy
 /// window-based coordinates, used for rendering and entity positioning.
+///
+/// For simplicity, assumes that the window size remains fixed after initialization.
 fn coords(r: Vec2, params: &BrachistochroneParams) -> Vec2 {
-    r * PX_PER_M - params.viewport_size / 2.
+    Vec2::new(
+        r.x * PX_PER_M - params.viewport_width / 4.,
+        r.y * PX_PER_M - params.viewport_height / 2.,
+    )
 }
 
 /// Menu on the top right corner to allow setting simulation parameters as well as starting/stopping the simulation
@@ -273,7 +280,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     slider(
                         SliderProps {
                             min: 20.,
-                            max: 80.,
+                            max: 150.,
                             value: params.grid_resolution as f32
                         },
                         (SliderStep(5.), SliderPrecision(0))
@@ -443,7 +450,7 @@ fn generate_brachistochrone_path(
 
         let mut brac = Brachistochrone::new(
             params.grid_resolution as usize,
-            0.1,
+            10. / params.grid_resolution as f32,
             params.start,
             params.end,
         );
@@ -493,12 +500,13 @@ fn consume_brachistochrone_path(
 
     // Move the ball up and to the right a bit, otherwise it would spawn in the middle of the Brachistochrone
     // path, leading to it clipping up or down ("falling through") unpredictably or getting stuck
-    let start = coords(params.start.into(), &params) + 15.;
+    let start =
+        coords(params.start.into(), &params) + Vec2::new(PX_PER_M / f32::consts::PI.sqrt(), 0.);
 
     commands
         .spawn(RigidBody::Dynamic)
         .insert(Transform::from_xyz(start.x, start.y, 0.))
-        .insert(Collider::ball(10.))
+        .insert(Collider::ball(PX_PER_M / f32::consts::PI.sqrt()))
         .insert(Friction::new(params.friction))
         .insert(MainBody);
 

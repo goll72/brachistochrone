@@ -3,5 +3,6 @@
   "reset": "Reset", 
   "grid_res": "Grid Resolution",
   "initial_pos": "Initial Position",
-  "final_pos": "Final Position"
+  "final_pos": "Final Position",
+  "friction": "Friction" 
 }

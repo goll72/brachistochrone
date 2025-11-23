@@ -294,6 +294,7 @@ impl Brachistochrone {
         BrachistochronePathIterator {
             memo: &self.memo,
             current: start,
+            finished: false,
             k: 0,
         }
     }
@@ -302,6 +303,7 @@ impl Brachistochrone {
 struct BrachistochronePathIterator<'a> {
     memo: &'a BrachistochroneMemo,
     current: Vector2<f32>,
+    finished: bool,
     k: usize,
 }
 
@@ -309,17 +311,21 @@ impl<'a> Iterator for BrachistochronePathIterator<'a> {
     type Item = (f32, Vector2<f32>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (cost, u_idx) = self.memo[(self.k, self.current)];
+        let x_k = self.current.clone();
+        let (cost, u_idx) = self.memo[(self.k, x_k)];
 
-        if u_idx == UNINIT || u_idx == TERMINAL {
+        if u_idx == UNINIT || self.finished {
             return None;
         }
 
-        let x_k = self.current.clone();
-        let u_k = &U[u_idx as usize];
+        if u_idx == TERMINAL {
+            self.finished = true;
+        } else {
+            let u_k = &U[u_idx as usize];
 
-        self.current += u_k;
-        self.k += 1;
+            self.current += u_k;
+            self.k += 1;
+        }
 
         return Some((cost, x_k));
     }
