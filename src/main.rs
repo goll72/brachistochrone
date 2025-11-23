@@ -465,12 +465,12 @@ fn generate_brachistochrone_path(
 
         brac.path_iter(params.start)
             .map_windows(|[(_, start), (_, end)]| {
-                // let start = coords(Vec2::from(*start), &params);
-                // let end = coords(Vec2::from(*end), &params);
+                let start = coords(Vec2::from(*start), &params);
+                let end = coords(Vec2::from(*end), &params);
 
                 (
                     RigidBody::Fixed,
-                    Collider::segment(Vec2::from(*start), Vec2::from(*end)),
+                    Collider::segment(start, end),
                     BrachistochronePath,
                 )
             })
