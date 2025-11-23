@@ -152,7 +152,7 @@ fn setup(
     commands.spawn(simulation_time_ui());
 }
 
-fn show_simulation_time(mut query: Query<(&mut Text, &SimulationTime)>) {
+fn show_simulation_time(l10n: Res<Localization>, mut query: Query<(&mut Text, &SimulationTime)>) {
     let Ok((mut text, sim_time)) = query.single_mut() else {
         return;
     };
@@ -167,7 +167,12 @@ fn show_simulation_time(mut query: Query<(&mut Text, &SimulationTime)>) {
     let secs = elapsed.as_secs();
     let millis = elapsed.as_millis();
 
-    text.0 = format!("{:02}:{:02}.{:.03}", secs / 60, secs % 60, millis);
+    text.0 = format!(
+        "{:02}:{:02.03} [{}]",
+        secs / 60,
+        secs % 60,
+        l10n.get("inaccuracy_disclaimer")
+    );
 }
 
 #[derive(Component)]
@@ -304,7 +309,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     slider(
                         SliderProps {
                             min: 0.,
-                            max: 0.9,
+                            max: 0.99,
                             value: params.friction
                         },
                         (SliderStep(0.05), SliderPrecision(2))

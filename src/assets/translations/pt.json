@@ -1,4 +1,5 @@
 {
+  "inaccuracy_disclaimer": "não será preciso caso a simulação esteja lagando",
   "start": "Começar",
   "reset": "Parar",
   "grid_res": "Resolução da grid",
