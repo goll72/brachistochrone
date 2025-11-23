@@ -242,6 +242,16 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
         };
     }
 
+    macro_rules! spacer {
+        () => {
+            (Node {
+                height: px(20),
+                grid_column: GridPlacement::span(2),
+                ..Default::default()
+            },)
+        };
+    }
+
     (
         Node {
             margin: UiRect::all(px(20)),
@@ -252,7 +262,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             justify_self: JustifySelf::End,
             display: Display::Grid,
             grid_template_columns: vec![GridTrack::min_content(), GridTrack::fr(1.)],
-            grid_template_rows: vec![RepeatedGridTrack::auto(2)],
+            grid_template_rows: vec![RepeatedGridTrack::auto(9)],
             ..Default::default()
         },
         TabGroup::default(),
@@ -282,6 +292,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     )
                 )]
             ),
+            spacer!(),
             label!("{} [x]", l10n.get("initial_pos")),
             position_slider!(
                 0.,
@@ -298,6 +309,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.end.y < change.value).then(|| params.start.y = change.value)
             ),
+            spacer!(),
             label!("{} [x]", l10n.get("final_pos")),
             position_slider!(
                 0.,
@@ -314,6 +326,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.start.y > change.value).then(|| params.end.y = change.value)
             ),
+            spacer!(),
             (
                 // [button "start"/"reset"]
                 Node {
