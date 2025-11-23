@@ -107,7 +107,9 @@ fn main() {
     })
     .insert_resource(l10n)
     .insert_resource(UiTheme(create_dark_theme()))
-    .add_systems(Startup, setup);
+    .add_systems(Startup, setup)
+    .add_systems(Update, debug_clicks)
+    .add_systems(Update, debug_taps);
 
     load_internal_binary_asset!(
         app,
@@ -119,9 +121,63 @@ fn main() {
     app.run();
 }
 
+use bevy::input::mouse::MouseButtonInput;
+use bevy::window::PrimaryWindow;
+
+#[derive(Component)]
+struct DebugMarker;
+
+fn debug_clicks(
+    mut mouse_events: MessageReader<MouseButtonInput>,
+    mut debug_text_query: Query<&mut Text, With<DebugMarker>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+) {
+    use bevy::input::ButtonState;
+
+    let mut text = debug_text_query.single_mut().unwrap();
+
+    for ev in mouse_events.read() {
+        match ev.state {
+            ButtonState::Pressed => {
+                if let Some(position) = window.cursor_position() {
+                    text.replace_range(
+                        ..,
+                        format!("[x]: {}, [y]: {}", position.x, position.y).as_str(),
+                    );
+                } else {
+                    text.replace_range(.., ":(");
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+fn debug_taps(
+    mut touch_events: MessageReader<TouchInput>,
+    mut debug_text_query: Query<&mut Text, With<DebugMarker>>,
+) {
+    let Ok(mut text) = debug_text_query.single_mut() else {
+        return;
+    };
+
+    let Some(event) = touch_events.read().last() else {
+        return;
+    };
+
+    text.replace_range(
+        ..,
+        format!("[x]: {}, [y]: {}", event.position.x, event.position.y).as_str(),
+    );
+}
+
 fn setup(mut commands: Commands, params: Res<BrachistochroneParams>, l10n: Res<Localization>) {
-    commands.spawn(Camera2d::default());
+    commands
+        .spawn(Camera2d::default())
+        .insert(Transform::from_xyz(PX_PER_M * 5., PX_PER_M * 5., 0.));
     commands.spawn(brachistochrone_ui(params, l10n));
+
+    commands.spawn((Text::new("xyz"), DebugMarker));
 }
 
 #[derive(Component)]
@@ -190,7 +246,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
         Node {
             margin: UiRect::all(px(20)),
             padding: UiRect::all(px(10)),
-            width: px(475),
+            width: px(400),
             column_gap: px(30),
             align_self: AlignSelf::End,
             justify_self: JustifySelf::End,
