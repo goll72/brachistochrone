@@ -1,3 +1,7 @@
+#![feature(stmt_expr_attributes)]
+
+use nalgebra::Vector2;
+
 use bevy::prelude::*;
 
 use bevy::asset::load_internal_binary_asset;
@@ -9,7 +13,7 @@ use bevy::window::PresentMode;
 
 use bevy::feathers::{
     FeathersPlugins,
-    controls::{ButtonProps, ButtonVariant, SliderProps, button, slider},
+    controls::{ButtonProps, SliderProps, button, slider},
     dark_theme::create_dark_theme,
     theme::{ThemeBackgroundColor, ThemedText, UiTheme},
     tokens,
@@ -17,21 +21,19 @@ use bevy::feathers::{
 
 use bevy_rapier2d::prelude::*;
 
-use rapier2d::parry::either::IntoEither;
 use serde::Deserialize;
 
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 mod brachistochrone;
+#[allow(unused_imports)]
 use brachistochrone::Brachistochrone;
 
 #[derive(Resource)]
 struct BrachistochroneParams {
-    start_x: f32,
-    start_y: f32,
-    end_x: f32,
-    end_y: f32,
-
+    start: Vector2<f32>,
+    end: Vector2<f32>,
     grid_resolution: u8,
 }
 
@@ -40,7 +42,10 @@ struct Localization(HashMap<String, String>);
 
 impl Localization {
     fn get(&self, s: &str) -> &String {
-        self.0.get(s).unwrap()
+        match self.0.get(s) {
+            Some(x) => x,
+            _ => panic!("Translation key not found: {s}"),
+        }
     }
 }
 
@@ -57,8 +62,6 @@ fn main() {
     } else {
         "/".into()
     };
-
-    let url = String::from("/pt/a");
 
     let l10n: Localization = {
         let json = match (url.get(0..1), url.get(1..3), url.get(3..4)) {
@@ -87,11 +90,8 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
     .add_plugins(RapierDebugRenderPlugin::default())
     .insert_resource(BrachistochroneParams {
-        start_x: 0.,
-        start_y: 10.,
-        end_x: 10.,
-        end_y: 0.,
-
+        start: Vector2::new(0., 10.),
+        end: Vector2::new(10., 0.),
         grid_resolution: 50,
     })
     .insert_resource(l10n)
@@ -114,6 +114,61 @@ fn setup(mut commands: Commands, params: Res<BrachistochroneParams>, l10n: Res<L
 }
 
 fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization>) -> impl Bundle {
+    macro_rules! label {
+        ($translation_key:literal) => {
+            (
+                Node {
+                    padding: UiRect::axes(px(5), px(2)),
+                    ..Default::default()
+                },
+                children![(
+                    Text::new(l10n.get($translation_key)),
+                    TextFont::from_font_size(14.)
+                )],
+            )
+        };
+
+        ($($t:tt)*) => {
+            (
+                Node {
+                    padding: UiRect::axes(px(5), px(2)),
+                    ..Default::default()
+                },
+                children![(
+                    Text::new(format!($($t)*)),
+                    TextFont::from_font_size(14.)
+                )],
+            )
+        }
+    }
+
+    macro_rules! position_slider {
+        ($min:literal, $max:literal, $value:expr, $validate:expr) => {
+            (
+                Node::default(),
+                children![(
+                    slider(
+                        SliderProps {
+                            min: $min,
+                            max: $max,
+                            value: $value
+                        },
+                        (SliderStep(0.5), SliderPrecision(1))
+                    ),
+                    observe(
+                        |change: On<ValueChange<f32>>,
+                         commands: Commands,
+                         params: ResMut<BrachistochroneParams>| {
+                            if let Some(_) = $validate(&change, params) {
+                                slider_self_update(change, commands);
+                            }
+                        }
+                    )
+                )],
+            )
+        };
+    }
+
     (
         Node {
             margin: UiRect::all(px(20)),
@@ -129,20 +184,9 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
         },
         TabGroup::default(),
         ThemeBackgroundColor(tokens::WINDOW_BG),
-        // "Grid Resolution" [slider]
-        // [button "Start"]
+        #[rustfmt::skip]
         children![
-            (
-                // "Grid Resolution"
-                Node {
-                    padding: UiRect::axes(px(5), px(2)),
-                    ..Default::default()
-                },
-                children![(
-                    Text::new(l10n.get("grid_res")),
-                    TextFont::from_font_size(16.)
-                )],
-            ),
+            label!("grid_res"),
             (
                 // [slider]
                 Node::default(),
@@ -165,6 +209,38 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     )
                 )]
             ),
+            label!("{} [x]", l10n.get("initial_pos")),
+            position_slider!(
+                0.,
+                10.,
+                params.start.x,
+                |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
+                    (params.end.x > change.value).then(|| params.start.x = change.value)
+            ),
+            label!("{} [y]", l10n.get("initial_pos")),
+            position_slider!(
+                0.,
+                10.,
+                params.start.y,
+                |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
+                    (params.end.y < change.value).then(|| params.start.y = change.value)
+            ),
+            label!("{} [x]", l10n.get("final_pos")),
+            position_slider!(
+                0.,
+                10.,
+                params.end.x,
+                |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
+                    (params.start.x < change.value).then(|| params.end.x = change.value)
+            ),
+            label!("{} [y]", l10n.get("final_pos")),
+            position_slider!(
+                0.,
+                10.,
+                params.end.y,
+                |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
+                    (params.start.y > change.value).then(|| params.end.y = change.value)
+            ),
             (
                 // [button "start"]
                 Node {
@@ -177,7 +253,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                         (),
                         Spawn((Text::new(l10n.get("start")), ThemedText))
                     ),
-                    observe(|activate: On<Activate>| {
+                    observe(|_: On<Activate>| {
                         info!("kys");
                     })
                 )]

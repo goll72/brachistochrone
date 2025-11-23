@@ -1,3 +1,4 @@
+.helix
 /target
 *.csv
 /web/wasm

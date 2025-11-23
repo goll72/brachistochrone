@@ -1,4 +1,6 @@
 {
   "start": "Start",
-  "grid_res": "Grid Resolution"
+  "grid_res": "Grid Resolution",
+  "initial_pos": "Initial Position",
+  "final_pos": "Final Position"
 }

@@ -1,4 +1,6 @@
 {
   "start": "Começar",
-  "grid_res": "Resolução da grid"
+  "grid_res": "Resolução da grid",
+  "initial_pos": "Posição inicial",
+  "final_pos": "Posição final"
 }
