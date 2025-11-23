@@ -1,3 +1,4 @@
+#![feature(iter_map_windows)]
 #![feature(stmt_expr_attributes)]
 
 use nalgebra::Vector2;
@@ -5,7 +6,9 @@ use nalgebra::Vector2;
 use bevy::prelude::*;
 
 use bevy::asset::load_internal_binary_asset;
+use bevy::ecs::world::CommandQueue;
 use bevy::input_focus::tab_navigation::TabGroup;
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy::ui_widgets::{
     Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
 };
@@ -30,7 +33,7 @@ mod brachistochrone;
 #[allow(unused_imports)]
 use brachistochrone::Brachistochrone;
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 struct BrachistochroneParams {
     start: Vector2<f32>,
     end: Vector2<f32>,
@@ -110,7 +113,8 @@ fn main() {
     })
     .insert_resource(l10n)
     .insert_resource(UiTheme(create_dark_theme()))
-    .add_systems(Startup, setup);
+    .add_systems(Startup, setup)
+    .add_systems(Update, consume_brachistochrone_path);
 
     load_internal_binary_asset!(
         app,
@@ -138,6 +142,7 @@ fn setup(
 #[derive(Component)]
 enum StartButtonMarker {
     Start,
+    Waiting,
     Reset,
 }
 
@@ -238,7 +243,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     slider(
                         SliderProps {
                             min: 20.,
-                            max: 100.,
+                            max: 80.,
                             value: params.grid_resolution as f32
                         },
                         (SliderStep(5.), SliderPrecision(0))
@@ -304,20 +309,16 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                              l10n: Res<Localization>,
                              params: Res<BrachistochroneParams>,
                              mut commands: Commands,
+                             gen_path_task: Option<ResMut<GenerateBrachistochronePath>>,
                              mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
                              main_body_query: Query<Entity, With<MainBody>>| {
                         if let Ok((mut text, mut marker)) = marker_query.single_mut() {
                             match *marker {
                                 StartButtonMarker::Start => {
-                                    text.replace_range(.., l10n.get("reset"));
-                                    *marker = StartButtonMarker::Reset;
+                                    text.replace_range(.., "...");
+                                    *marker = StartButtonMarker::Waiting;
 
-                                    let start = coords(params.start.into(), &params);
-
-                                    commands.spawn(RigidBody::Dynamic)
-                                        .insert(Transform::from_xyz(start.x, start.y, 0.))
-                                        .insert(Collider::ball(10.))
-                                        .insert(MainBody);
+                                    generate_brachistochrone_path(params, commands, gen_path_task);
                                 }
                                 StartButtonMarker::Reset => {
                                     text.replace_range(.., l10n.get("start"));
@@ -327,6 +328,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                         commands.entity(id).despawn();
                                     }
                                 }
+                                StartButtonMarker::Waiting => ()
                             }
                         }
                     })
@@ -334,4 +336,81 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             )
         ],
     )
+}
+
+#[derive(Resource)]
+struct GenerateBrachistochronePath(Task<CommandQueue>);
+
+fn generate_brachistochrone_path(
+    params: Res<BrachistochroneParams>,
+    mut commands: Commands,
+    task: Option<ResMut<GenerateBrachistochronePath>>,
+) {
+    if let Some(_) = task {
+        return;
+    }
+
+    let params = params.clone();
+    let pool = AsyncComputeTaskPool::get();
+
+    commands.insert_resource(GenerateBrachistochronePath(pool.spawn(async move {
+        let mut command_queue = CommandQueue::default();
+
+        let mut brac = Brachistochrone::new(
+            params.grid_resolution as usize,
+            0.1,
+            params.start,
+            params.end,
+        );
+
+        brac.solve();
+
+        brac.path_iter(params.start)
+            .map_windows(|[(_, start), (_, end)]| {
+                (
+                    RigidBody::Fixed,
+                    Collider::segment(Vec2::from(*start), Vec2::from(*end)),
+                )
+            })
+            .for_each(|x| {
+                command_queue.push(move |world: &mut World| {
+                    world.spawn(x);
+                })
+            });
+
+        command_queue
+    })));
+}
+
+/// Once the Brachistochrone path has been generated, consume it, spawn the ball
+/// (main simulation body), and change the Start button state to Reset.
+fn consume_brachistochrone_path(
+    l10n: Res<Localization>,
+    params: Res<BrachistochroneParams>,
+    mut commands: Commands,
+    task: Option<ResMut<GenerateBrachistochronePath>>,
+    mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
+) {
+    let Some(mut task) = task else {
+        return;
+    };
+
+    let Some(mut command_queue) = block_on(future::poll_once(&mut task.0)) else {
+        return;
+    };
+
+    let start = coords(params.start.into(), &params);
+
+    commands
+        .spawn(RigidBody::Dynamic)
+        .insert(Transform::from_xyz(start.x, start.y, 0.))
+        .insert(Collider::ball(10.))
+        .insert(MainBody);
+
+    commands.append(&mut command_queue);
+
+    if let Ok((mut text, mut marker)) = marker_query.single_mut() {
+        text.replace_range(.., l10n.get("reset"));
+        *marker = StartButtonMarker::Reset;
+    }
 }
