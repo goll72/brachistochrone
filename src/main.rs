@@ -9,7 +9,7 @@ use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::ui_widgets::{
     Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
 };
-use bevy::window::PresentMode;
+use bevy::window::{PresentMode, PrimaryWindow};
 
 use bevy::feathers::{
     FeathersPlugins,
@@ -30,11 +30,13 @@ mod brachistochrone;
 #[allow(unused_imports)]
 use brachistochrone::Brachistochrone;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct BrachistochroneParams {
     start: Vector2<f32>,
     end: Vector2<f32>,
     grid_resolution: u8,
+    // This value is taken from the initial window size
+    viewport_size: f32,
 }
 
 /// The main body under simulation (rolling on the Brachistochrone-like curve)
@@ -104,12 +106,11 @@ fn main() {
         start: Vector2::new(0., 10.),
         end: Vector2::new(10., 0.),
         grid_resolution: 50,
+        ..Default::default()
     })
     .insert_resource(l10n)
     .insert_resource(UiTheme(create_dark_theme()))
-    .add_systems(Startup, setup)
-    .add_systems(Update, debug_clicks)
-    .add_systems(Update, debug_taps);
+    .add_systems(Startup, setup);
 
     load_internal_binary_asset!(
         app,
@@ -121,69 +122,29 @@ fn main() {
     app.run();
 }
 
-use bevy::input::mouse::MouseButtonInput;
-use bevy::window::PrimaryWindow;
-
-#[derive(Component)]
-struct DebugMarker;
-
-fn debug_clicks(
-    mut mouse_events: MessageReader<MouseButtonInput>,
-    mut debug_text_query: Query<&mut Text, With<DebugMarker>>,
+fn setup(
+    mut commands: Commands,
+    mut params: ResMut<BrachistochroneParams>,
+    l10n: Res<Localization>,
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    use bevy::input::ButtonState;
+    // XXX: this is going to lead to a lot of wasted space on vertical screens (e.g. mobile)
+    params.viewport_size = f32::min(window.width(), window.height());
 
-    let mut text = debug_text_query.single_mut().unwrap();
-
-    for ev in mouse_events.read() {
-        match ev.state {
-            ButtonState::Pressed => {
-                if let Some(position) = window.cursor_position() {
-                    text.replace_range(
-                        ..,
-                        format!("[x]: {}, [y]: {}", position.x, position.y).as_str(),
-                    );
-                } else {
-                    text.replace_range(.., ":(");
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-fn debug_taps(
-    mut touch_events: MessageReader<TouchInput>,
-    mut debug_text_query: Query<&mut Text, With<DebugMarker>>,
-) {
-    let Ok(mut text) = debug_text_query.single_mut() else {
-        return;
-    };
-
-    let Some(event) = touch_events.read().last() else {
-        return;
-    };
-
-    text.replace_range(
-        ..,
-        format!("[x]: {}, [y]: {}", event.position.x, event.position.y).as_str(),
-    );
-}
-
-fn setup(mut commands: Commands, params: Res<BrachistochroneParams>, l10n: Res<Localization>) {
-    commands
-        .spawn(Camera2d::default())
-        .insert(Transform::from_xyz(PX_PER_M * 5., PX_PER_M * 5., 0.));
-    commands.spawn(brachistochrone_ui(params, l10n));
-
-    commands.spawn((Text::new("xyz"), DebugMarker));
+    commands.spawn(Camera2d::default());
+    commands.spawn(brachistochrone_ui(params.into(), l10n));
 }
 
 #[derive(Component)]
 enum StartButtonMarker {
     Start,
     Reset,
+}
+
+/// Transforms coordinates from the physics simulation space to the Bevy
+/// window-based coordinates, used for rendering and entity positioning.
+fn coords(r: Vec2, params: &BrachistochroneParams) -> Vec2 {
+    r * PX_PER_M - params.viewport_size / 2.
 }
 
 fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization>) -> impl Bundle {
@@ -351,8 +312,10 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                     text.replace_range(.., l10n.get("reset"));
                                     *marker = StartButtonMarker::Reset;
 
+                                    let start = coords(params.start.into(), &params);
+
                                     commands.spawn(RigidBody::Dynamic)
-                                        .insert(Transform::from_xyz(PX_PER_M * params.start.x, PX_PER_M * params.start.y, 0.))
+                                        .insert(Transform::from_xyz(start.x, start.y, 0.))
                                         .insert(Collider::ball(10.))
                                         .insert(MainBody);
                                 }
