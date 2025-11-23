@@ -189,7 +189,7 @@ enum StartButtonMarker {
 fn coords(r: Vec2, params: &BrachistochroneParams) -> Vec2 {
     Vec2::new(
         r.x * PX_PER_M - params.viewport_width / 4.,
-        r.y * PX_PER_M - params.viewport_height / 2.,
+        r.y * PX_PER_M - 3. * params.viewport_height / 8.,
     )
 }
 
@@ -284,8 +284,8 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 children![(
                     slider(
                         SliderProps {
-                            min: 20.,
-                            max: 150.,
+                            min: 10.,
+                            max: 90.,
                             value: params.grid_resolution as f32
                         },
                         (SliderStep(5.), SliderPrecision(0))
@@ -331,7 +331,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 10.,
                 params.start.x,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
-                    (params.end.x > change.value).then(|| params.start.x = change.value)
+                    (params.end.x > change.value + 2.).then(|| params.start.x = change.value)
             ),
             label!("{} [y]", l10n.get("initial_pos")),
             position_slider!(
@@ -339,7 +339,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 10.,
                 params.start.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
-                    (params.end.y < change.value).then(|| params.start.y = change.value)
+                    (params.end.y < change.value - 2.).then(|| params.start.y = change.value)
             ),
             spacer!(),
             label!("{} [x]", l10n.get("final_pos")),
@@ -348,7 +348,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 10.,
                 params.end.x,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
-                    (params.start.x < change.value).then(|| params.end.x = change.value)
+                    (params.start.x < change.value - 2.).then(|| params.end.x = change.value)
             ),
             label!("{} [y]", l10n.get("final_pos")),
             position_slider!(
@@ -356,7 +356,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 10.,
                 params.end.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
-                    (params.start.y > change.value).then(|| params.end.y = change.value)
+                    (params.start.y > change.value + 2.).then(|| params.end.y = change.value)
             ),
             spacer!(),
             (
@@ -453,19 +453,21 @@ fn generate_brachistochrone_path(
     commands.insert_resource(GenerateBrachistochronePath(pool.spawn(async move {
         let mut command_queue = CommandQueue::default();
 
+        let mu = 10. / params.grid_resolution as f32;
+
         let mut brac = Brachistochrone::new(
             params.grid_resolution as usize,
-            10. / params.grid_resolution as f32,
-            params.start,
-            params.end,
+            mu,
+            (1. / mu) * params.start,
+            (1. / mu) * params.end,
         );
 
         brac.solve();
 
-        brac.path_iter(params.start)
+        brac.path_iter((1. / mu) * params.start)
             .map_windows(|[(_, start), (_, end)]| {
-                let start = coords(Vec2::from(*start), &params);
-                let end = coords(Vec2::from(*end), &params);
+                let start = coords(Vec2::from(mu * start), &params);
+                let end = coords(Vec2::from(mu * end), &params);
 
                 (start, end)
             })
