@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 
-use bevy::asset::{load_internal_asset, load_internal_binary_asset};
+use bevy::asset::load_internal_binary_asset;
 use bevy::input_focus::tab_navigation::TabGroup;
-use bevy::render::render_resource::AsBindGroupShaderType;
-use bevy::ui_widgets::{Activate, SliderPrecision, SliderStep, observe};
+use bevy::ui_widgets::{
+    Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
+};
 use bevy::window::PresentMode;
 
 use bevy::feathers::{
@@ -16,6 +17,7 @@ use bevy::feathers::{
 
 use bevy_rapier2d::prelude::*;
 
+use rapier2d::parry::either::IntoEither;
 use serde::Deserialize;
 
 use std::collections::HashMap;
@@ -114,46 +116,71 @@ fn setup(mut commands: Commands, params: Res<BrachistochroneParams>, l10n: Res<L
 fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization>) -> impl Bundle {
     (
         Node {
-            width: percent(100),
-            height: percent(20),
-            align_items: AlignItems::Start,
-            justify_content: JustifyContent::Start,
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            row_gap: px(10),
+            margin: UiRect::all(px(20)),
+            padding: UiRect::all(px(10)),
+            width: px(475),
+            column_gap: px(30),
+            align_self: AlignSelf::End,
+            justify_self: JustifySelf::End,
+            display: Display::Grid,
+            grid_template_columns: vec![GridTrack::min_content(), GridTrack::fr(1.)],
+            grid_template_rows: vec![RepeatedGridTrack::auto(2)],
             ..Default::default()
         },
         TabGroup::default(),
         ThemeBackgroundColor(tokens::WINDOW_BG),
+        // "Grid Resolution" [slider]
+        // [button "Start"]
         children![
             (
+                // "Grid Resolution"
                 Node {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Start,
-                    column_gap: px(15),
+                    padding: UiRect::axes(px(5), px(2)),
                     ..Default::default()
                 },
-                Text::new(l10n.get("grid_res")),
-                (slider(
-                    SliderProps {
-                        min: 20.,
-                        max: 100.,
-                        value: params.grid_resolution as f32
-                    },
-                    (SliderStep(5.), SliderPrecision(0))
-                ))
+                children![(
+                    Text::new(l10n.get("grid_res")),
+                    TextFont::from_font_size(16.)
+                )],
             ),
             (
-                button(
-                    ButtonProps::default(),
-                    (),
-                    Spawn((Text::new(l10n.get("start")), ThemedText))
-                ),
-                observe(|activate: On<Activate>| {
-                    info!("kys");
-                })
+                // [slider]
+                Node::default(),
+                children![(
+                    slider(
+                        SliderProps {
+                            min: 20.,
+                            max: 100.,
+                            value: params.grid_resolution as f32
+                        },
+                        (SliderStep(5.), SliderPrecision(0))
+                    ),
+                    observe(
+                        |change: On<ValueChange<f32>>,
+                         commands: Commands,
+                         mut params: ResMut<BrachistochroneParams>| {
+                            params.grid_resolution = change.value as u8;
+                            slider_self_update(change, commands);
+                        }
+                    )
+                )]
+            ),
+            (
+                // [button "start"]
+                Node {
+                    grid_column: GridPlacement::span(2),
+                    ..Default::default()
+                },
+                children![(
+                    button(
+                        ButtonProps::default(),
+                        (),
+                        Spawn((Text::new(l10n.get("start")), ThemedText))
+                    ),
+                    observe(|activate: On<Activate>| {
+                        info!("kys");
+                    })
+                )]
             )
         ],
     )
