@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy::asset::load_internal_binary_asset;
 use bevy::ecs::world::CommandQueue;
 use bevy::input_focus::tab_navigation::TabGroup;
-use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
+use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
 use bevy::ui_widgets::{
     Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
 };
@@ -311,7 +311,8 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                              mut commands: Commands,
                              gen_path_task: Option<ResMut<GenerateBrachistochronePath>>,
                              mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
-                             main_body_query: Query<Entity, With<MainBody>>| {
+                             main_body_query: Query<Entity, With<MainBody>>,
+                             path_segments_query: Query<Entity, With<BrachistochronePath>>| {
                         if let Ok((mut text, mut marker)) = marker_query.single_mut() {
                             match *marker {
                                 StartButtonMarker::Start => {
@@ -325,6 +326,10 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                     *marker = StartButtonMarker::Start;
 
                                     if let Ok(id) = main_body_query.single() {
+                                        commands.entity(id).despawn();
+                                    }
+
+                                    for id in path_segments_query {
                                         commands.entity(id).despawn();
                                     }
                                 }
@@ -367,9 +372,13 @@ fn generate_brachistochrone_path(
 
         brac.path_iter(params.start)
             .map_windows(|[(_, start), (_, end)]| {
+                let start = coords(Vec2::from(*start), &params);
+                let end = coords(Vec2::from(*end), &params);
+
                 (
                     RigidBody::Fixed,
-                    Collider::segment(Vec2::from(*start), Vec2::from(*end)),
+                    Collider::segment(start, end),
+                    BrachistochronePath,
                 )
             })
             .for_each(|x| {
@@ -395,15 +404,19 @@ fn consume_brachistochrone_path(
         return;
     };
 
-    let Some(mut command_queue) = block_on(future::poll_once(&mut task.0)) else {
+    let Some(mut command_queue) = check_ready(&mut task.0) else {
         return;
     };
 
+    commands.remove_resource::<GenerateBrachistochronePath>();
+
     let start = coords(params.start.into(), &params);
 
+    // Move the ball up a bit, otherwise it would spawn in the middle of the Brachistochrone
+    // path, leading to it clipping up or down ("falling through") unpredictably
     commands
         .spawn(RigidBody::Dynamic)
-        .insert(Transform::from_xyz(start.x, start.y, 0.))
+        .insert(Transform::from_xyz(start.x, start.y + 15., 0.))
         .insert(Collider::ball(10.))
         .insert(MainBody);
 
