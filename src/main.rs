@@ -41,6 +41,9 @@ struct BrachistochroneParams {
 #[derive(Component)]
 struct MainBody;
 
+#[derive(Component)]
+struct BrachistochronePath;
+
 #[derive(Resource, Deserialize)]
 struct Localization(HashMap<String, String>);
 
@@ -52,6 +55,8 @@ impl Localization {
         }
     }
 }
+
+const PX_PER_M: f32 = 100.;
 
 fn main() {
     let mut app = App::new();
@@ -91,7 +96,9 @@ fn main() {
         }),
         FeathersPlugins,
     ))
-    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
+        PX_PER_M,
+    ))
     .add_plugins(RapierDebugRenderPlugin::default())
     .insert_resource(BrachistochroneParams {
         start: Vector2::new(0., 10.),
@@ -252,7 +259,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     (params.start.y > change.value).then(|| params.end.y = change.value)
             ),
             (
-                // [button "start"]
+                // [button "start"/"reset"]
                 Node {
                     grid_column: GridPlacement::span(2),
                     ..Default::default()
@@ -263,20 +270,30 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                         (),
                         Spawn((Text::new(l10n.get("start")), ThemedText, StartButtonMarker::Start))
                     ),
-                    observe(|_: On<Activate>, l10n: Res<Localization>, mut query: Query<(&mut Text, &mut StartButtonMarker)>| {
-                        if let Ok((mut text, mut marker)) = query.single_mut() {
+                    observe(|_: On<Activate>,
+                             l10n: Res<Localization>,
+                             params: Res<BrachistochroneParams>,
+                             mut commands: Commands,
+                             mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
+                             main_body_query: Query<Entity, With<MainBody>>| {
+                        if let Ok((mut text, mut marker)) = marker_query.single_mut() {
                             match *marker {
                                 StartButtonMarker::Start => {
                                     text.replace_range(.., l10n.get("reset"));
                                     *marker = StartButtonMarker::Reset;
 
-                                    // XXX: Spawn `MainBody`
+                                    commands.spawn(RigidBody::Dynamic)
+                                        .insert(Transform::from_xyz(PX_PER_M * params.start.x, PX_PER_M * params.start.y, 0.))
+                                        .insert(Collider::ball(10.))
+                                        .insert(MainBody);
                                 }
                                 StartButtonMarker::Reset => {
                                     text.replace_range(.., l10n.get("start"));
                                     *marker = StartButtonMarker::Start;
 
-                                    // XXX: Reset
+                                    if let Ok(id) = main_body_query.single() {
+                                        commands.entity(id).despawn();
+                                    }
                                 }
                             }
                         }

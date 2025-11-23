@@ -1,5 +1,6 @@
 {
   "start": "Start",
+  "reset": "Reset", 
   "grid_res": "Grid Resolution",
   "initial_pos": "Initial Position",
   "final_pos": "Final Position"
