@@ -15,13 +15,13 @@ use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::platform::time::Instant;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
 use bevy::ui_widgets::{
-    Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update,
+    Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update, checkbox_self_update
 };
 use bevy::window::{PresentMode, PrimaryWindow};
 
 use bevy::feathers::{
     FeathersPlugins,
-    controls::{ButtonProps, SliderProps, button, slider},
+    controls::{ButtonProps, SliderProps, button, slider, checkbox},
     dark_theme::create_dark_theme,
     theme::{ThemeBackgroundColor, ThemedText, UiTheme},
     tokens,
@@ -44,7 +44,10 @@ struct BrachistochroneParams {
     // These values are taken from the initial window size
     viewport_width: f32,
     viewport_height: f32,
+
+    // Default `Default` impl for these items should make sense
     friction: f32,
+    straight_line: bool,
 }
 
 /// The main body under simulation (rolling on the Brachistochrone-like curve)
@@ -77,7 +80,9 @@ impl Localization {
 }
 
 const PX_PER_M: f32 = 50.;
-const MAIN_BODY_RADIUS: f32 = PX_PER_M * f32::consts::FRAC_1_SQRT_PI;
+
+const MAIN_BODY_RADIUS: f32 = PX_PER_M / 2. * f32::consts::FRAC_1_SQRT_PI;
+const MAIN_BODY_DENSITY: f32 = 4.;
 
 fn main() {
     let mut app = App::new();
@@ -299,7 +304,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             justify_self: JustifySelf::End,
             display: Display::Grid,
             grid_template_columns: vec![GridTrack::min_content(), GridTrack::fr(1.)],
-            grid_template_rows: vec![RepeatedGridTrack::auto(11)],
+            grid_template_rows: vec![RepeatedGridTrack::auto(13)],
             ..Default::default()
         },
         TabGroup::default(),
@@ -374,7 +379,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             label!("{} [x]", l10n.get("final_pos")),
             position_slider!(
                 0.,
-                10.,
+                15.,
                 params.end.x,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.start.x < change.value - 2.).then(|| params.end.x = change.value)
@@ -386,6 +391,20 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                 params.end.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.start.y > change.value + 2.).then(|| params.end.y = change.value)
+            ),
+            spacer!(),
+            (
+                Node {
+                    grid_column: GridPlacement::start(1),
+                    ..Default::default()
+                },
+                children![(
+                    checkbox((), Spawn((Text::new(l10n.get("straight_line")), ThemedText))),
+                    observe(|change: On<ValueChange<bool>>, mut params: ResMut<BrachistochroneParams>, commands: Commands| {
+                        params.straight_line = change.value;
+                        checkbox_self_update(change, commands);
+                    })
+                )]
             ),
             spacer!(),
             (
@@ -408,7 +427,9 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                              mut marker_query: Query<(&mut Text, &mut StartButtonMarker)>,
                              main_body_query: Query<Entity, With<MainBody>>,
                              path_segments_query: Query<Entity, With<BrachistochronePath>>,
-                             mut sim_time_query: Query<&mut SimulationTime>| {
+                             mut sim_time_query: Query<&mut SimulationTime>,
+                             mut meshes: ResMut<Assets<Mesh>>,
+                             mut materials: ResMut<Assets<ColorMaterial>>| {
                         let Ok(mut sim_time) = sim_time_query.single_mut() else {
                             return;
                         };
@@ -416,12 +437,51 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                         if let Ok((mut text, mut marker)) = marker_query.single_mut() {
                             match *marker {
                                 StartButtonMarker::Start => {
-                                    text.replace_range(.., "...");
-                                    *marker = StartButtonMarker::Waiting;
+                                    if params.straight_line {
+                                        text.replace_range(.., l10n.get("reset"));
+                                        *marker = StartButtonMarker::Reset;
+                                        
+                                        let mut start = coords(params.start.into(), &params);
+                                        let end = coords(params.end.into(), &params);
 
-                                    // The simulation time should only be set once the path has actually been
-                                    // generated, i.e. in `consume_brachistochrone_path`
-                                    generate_brachistochrone_path(params, commands, gen_path_task);
+                                        let mesh = meshes.add(Segment2d::new(start, end));
+                                        let material = materials.add(Color::srgba(1., 1., 1., 1.));
+
+                                        commands.spawn((
+                                            Mesh2d(mesh),
+                                            MeshMaterial2d(material),
+                                            RigidBody::Fixed,
+                                            Collider::segment(start, end),
+                                            Friction::new(params.friction),
+                                            BrachistochronePath
+                                        ));
+
+                                        let mesh = meshes.add(Circle::new(MAIN_BODY_RADIUS));
+                                        let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
+
+                                        // Move the ball up and to the right a bit
+                                        start += Vec2::new(MAIN_BODY_RADIUS / 4., MAIN_BODY_RADIUS);
+
+                                        commands.spawn((
+                                            Mesh2d(mesh),
+                                            MeshMaterial2d(material),
+                                            RigidBody::Dynamic,
+                                            Transform::from_xyz(start.x, start.y, 0.),
+                                            Collider::ball(MAIN_BODY_RADIUS),
+                                            ColliderMassProperties::Density(MAIN_BODY_DENSITY),
+                                            Friction::new(params.friction),
+                                            MainBody
+                                        ));
+
+                                        *sim_time = SimulationTime::Valid(Instant::now());
+                                    } else {
+                                        text.replace_range(.., "...");
+                                        *marker = StartButtonMarker::Waiting;
+
+                                        // The simulation time should only be set once the path has actually been
+                                        // generated, i.e. in `consume_brachistochrone_path`
+                                        generate_brachistochrone_path(params, commands, gen_path_task);
+                                    }
                                 }
                                 StartButtonMarker::Reset => {
                                     text.replace_range(.., l10n.get("start"));
@@ -482,7 +542,8 @@ fn generate_brachistochrone_path(
     commands.insert_resource(GenerateBrachistochronePath(pool.spawn(async move {
         let mut command_queue = CommandQueue::default();
 
-        let mu = 10. / params.grid_resolution as f32;
+        let max = f32::max(params.start.y, params.end.x);
+        let mu = max / params.grid_resolution as f32;
 
         let mut brac = Brachistochrone::new(
             params.grid_resolution as usize,
@@ -557,8 +618,9 @@ fn consume_brachistochrone_path(
         RigidBody::Dynamic,
         Transform::from_xyz(start.x, start.y, 0.),
         Collider::ball(MAIN_BODY_RADIUS),
+        ColliderMassProperties::Density(MAIN_BODY_DENSITY),
         Friction::new(params.friction),
-        MainBody,
+        MainBody
     ));
 
     commands.append(&mut command_queue);
