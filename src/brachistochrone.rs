@@ -222,7 +222,6 @@ pub struct Brachistochrone {
     memo: BrachistochroneMemo,
 }
 
-// This should support async computation but who is going to manually implement `Future`? not me.
 impl Brachistochrone {
     pub fn new(n: usize, mu: f32, start: Vector2<f32>, end: Vector2<f32>) -> Brachistochrone {
         // "Tighter" (not really) lower bound for time horizon found by approximating from experimental data

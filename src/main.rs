@@ -28,6 +28,7 @@ use bevy::feathers::{
 };
 
 use bevy_rapier2d::prelude::*;
+use bevy_rapier2d::plugin::configuration::TimestepMode;
 
 use serde::Deserialize;
 
@@ -79,6 +80,8 @@ impl Localization {
     }
 }
 
+const TIME_SCALE: f32 = 0.7;
+
 const PX_PER_M: f32 = 50.;
 
 const MAIN_BODY_RADIUS: f32 = PX_PER_M / 2. * f32::consts::FRAC_1_SQRT_PI;
@@ -89,9 +92,8 @@ fn main() {
 
     let url = if cfg!(target_family = "wasm") {
         web_sys::window()
-            .map(|x| x.document())
-            .flatten()
-            .map(|x| x.url().ok())
+            .map(|x| x.location())
+            .map(|x| x.pathname().ok())
             .flatten()
             .unwrap_or("/".into())
     } else {
@@ -125,6 +127,11 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
         PX_PER_M,
     ))
+    .insert_resource(TimestepMode::Interpolated {
+        dt: 0.01,
+        time_scale: TIME_SCALE,
+        substeps: 3
+    })
     .insert_resource(BrachistochroneParams {
         start: Vector2::new(0., 10.),
         end: Vector2::new(10., 0.),
@@ -164,7 +171,7 @@ fn setup(
 
 fn show_simulation_time(
     params: Res<BrachistochroneParams>,
-    l10n: Res<Localization>,
+    sim_to_render_time: Single<&SimulationToRenderTime>,
     mut sim_time_query: Query<(&mut Text, &mut SimulationTime)>,
     main_body_pos_query: Query<&Transform, With<MainBody>>,
 ) {
@@ -181,15 +188,13 @@ fn show_simulation_time(
         SimulationTime::Frozen => return,
     };
 
-    let millis = elapsed.as_millis();
-    let secs = millis / 1000;
+    let secs = TIME_SCALE * elapsed.as_secs_f32() + sim_to_render_time.diff;
 
     text.0 = format!(
-        "{:02}:{:02}.{:02} [{}]",
-        secs / 60,
-        secs % 60,
-        (millis % 1000) / 10,
-        l10n.get("inaccuracy_disclaimer")
+        "{:02}:{:02}.{:03}",
+        (secs / 60.).trunc() as usize,
+        (secs % 60.).trunc() as usize,
+        ((secs * 1000.) % 1000.).round() as usize
     );
 
     let Ok(main_body_pos) = main_body_pos_query.single() else {
@@ -319,7 +324,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                     slider(
                         SliderProps {
                             min: 10.,
-                            max: 90.,
+                            max: 150.,
                             value: params.grid_resolution as f32
                         },
                         (SliderStep(5.), SliderPrecision(0))
@@ -362,7 +367,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             label!("{} [x]", l10n.get("initial_pos")),
             position_slider!(
                 0.,
-                10.,
+                15.,
                 params.start.x,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.end.x > change.value + 2.).then(|| params.start.x = change.value)
@@ -370,7 +375,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             label!("{} [y]", l10n.get("initial_pos")),
             position_slider!(
                 0.,
-                10.,
+                15.,
                 params.start.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.end.y < change.value - 2.).then(|| params.start.y = change.value)
@@ -387,7 +392,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             label!("{} [y]", l10n.get("final_pos")),
             position_slider!(
                 0.,
-                10.,
+                15.,
                 params.end.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
                     (params.start.y > change.value + 2.).then(|| params.end.y = change.value)
@@ -460,7 +465,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                         let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
 
                                         // Move the ball up and to the right a bit
-                                        start += Vec2::new(MAIN_BODY_RADIUS / 4., MAIN_BODY_RADIUS);
+                                        start += Vec2::new(MAIN_BODY_RADIUS, MAIN_BODY_RADIUS / 4.);
 
                                         commands.spawn((
                                             Mesh2d(mesh),

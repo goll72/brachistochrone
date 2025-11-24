@@ -1,5 +1,5 @@
 {
-  "inaccuracy_disclaimer": "may be inaccurate if simulation is lagging",
+  "straight_line": "Straight line", 
   "start": "Start",
   "reset": "Reset", 
   "grid_res": "Grid Resolution",
