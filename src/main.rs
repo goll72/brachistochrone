@@ -15,20 +15,21 @@ use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::platform::time::Instant;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
 use bevy::ui_widgets::{
-    Activate, SliderPrecision, SliderStep, ValueChange, observe, slider_self_update, checkbox_self_update
+    Activate, SliderPrecision, SliderStep, ValueChange, checkbox_self_update, observe,
+    slider_self_update,
 };
 use bevy::window::{PresentMode, PrimaryWindow};
 
 use bevy::feathers::{
     FeathersPlugins,
-    controls::{ButtonProps, SliderProps, button, slider, checkbox},
+    controls::{ButtonProps, SliderProps, button, checkbox, slider},
     dark_theme::create_dark_theme,
     theme::{ThemeBackgroundColor, ThemedText, UiTheme},
     tokens,
 };
 
-use bevy_rapier2d::prelude::*;
 use bevy_rapier2d::plugin::configuration::TimestepMode;
+use bevy_rapier2d::prelude::*;
 
 use serde::Deserialize;
 
@@ -87,6 +88,8 @@ const PX_PER_M: f32 = 50.;
 const MAIN_BODY_RADIUS: f32 = PX_PER_M / 2. * f32::consts::FRAC_1_SQRT_PI;
 const MAIN_BODY_DENSITY: f32 = 4.;
 
+const PATH_SPAWN_OFFSET: Vec2 = Vec2::new(-MAIN_BODY_RADIUS / 4., -MAIN_BODY_RADIUS);
+
 fn main() {
     let mut app = App::new();
 
@@ -130,7 +133,7 @@ fn main() {
     .insert_resource(TimestepMode::Interpolated {
         dt: 0.01,
         time_scale: TIME_SCALE,
-        substeps: 3
+        substeps: 3,
     })
     .insert_resource(BrachistochroneParams {
         start: Vector2::new(0., 10.),
@@ -230,6 +233,49 @@ fn coords(r: Vec2, params: &BrachistochroneParams) -> Vec2 {
         r.x * PX_PER_M - params.viewport_width / 4.,
         r.y * PX_PER_M - 3. * params.viewport_height / 8.,
     )
+}
+
+fn spawn_path_segment(
+    commands: &mut Commands,
+    params: &BrachistochroneParams,
+    start: Vec2,
+    end: Vec2,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let mesh = meshes.add(Segment2d::new(start, end));
+    let material = materials.add(Color::srgba(1., 1., 1., 1.));
+
+    commands.spawn((
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+        RigidBody::Fixed,
+        Collider::segment(start, end),
+        Friction::new(params.friction),
+        BrachistochronePath,
+    ));
+}
+
+fn spawn_main_body(
+    commands: &mut Commands,
+    params: &BrachistochroneParams,
+    position: Vec2,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let mesh = meshes.add(Circle::new(MAIN_BODY_RADIUS));
+    let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
+
+    commands.spawn((
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+        RigidBody::Dynamic,
+        Transform::from_translation(position.extend(0.)),
+        Collider::ball(MAIN_BODY_RADIUS),
+        ColliderMassProperties::Density(MAIN_BODY_DENSITY),
+        Friction::new(params.friction),
+        MainBody,
+    ));
 }
 
 /// Menu on the top right corner to allow setting simulation parameters as well as starting/stopping the simulation
@@ -391,7 +437,7 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
             ),
             label!("{} [y]", l10n.get("final_pos")),
             position_slider!(
-                0.,
+                2.,
                 15.,
                 params.end.y,
                 |change: &On<ValueChange<f32>>, mut params: ResMut<BrachistochroneParams>|
@@ -445,38 +491,12 @@ fn brachistochrone_ui(params: Res<BrachistochroneParams>, l10n: Res<Localization
                                     if params.straight_line {
                                         text.replace_range(.., l10n.get("reset"));
                                         *marker = StartButtonMarker::Reset;
-                                        
-                                        let mut start = coords(params.start.into(), &params);
+
+                                        let start = coords(params.start.into(), &params);
                                         let end = coords(params.end.into(), &params);
 
-                                        let mesh = meshes.add(Segment2d::new(start, end));
-                                        let material = materials.add(Color::srgba(1., 1., 1., 1.));
-
-                                        commands.spawn((
-                                            Mesh2d(mesh),
-                                            MeshMaterial2d(material),
-                                            RigidBody::Fixed,
-                                            Collider::segment(start, end),
-                                            Friction::new(params.friction),
-                                            BrachistochronePath
-                                        ));
-
-                                        let mesh = meshes.add(Circle::new(MAIN_BODY_RADIUS));
-                                        let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
-
-                                        // Move the ball up and to the right a bit
-                                        start += Vec2::new(MAIN_BODY_RADIUS, MAIN_BODY_RADIUS / 4.);
-
-                                        commands.spawn((
-                                            Mesh2d(mesh),
-                                            MeshMaterial2d(material),
-                                            RigidBody::Dynamic,
-                                            Transform::from_xyz(start.x, start.y, 0.),
-                                            Collider::ball(MAIN_BODY_RADIUS),
-                                            ColliderMassProperties::Density(MAIN_BODY_DENSITY),
-                                            Friction::new(params.friction),
-                                            MainBody
-                                        ));
+                                        spawn_path_segment(&mut commands, &params, start + PATH_SPAWN_OFFSET, end + PATH_SPAWN_OFFSET, &mut meshes, &mut materials);
+                                        spawn_main_body(&mut commands, &params, start, &mut meshes, &mut materials);
 
                                         *sim_time = SimulationTime::Valid(Instant::now());
                                     } else {
@@ -614,19 +634,7 @@ fn consume_brachistochrone_path(
     // path, leading to it clipping up or down ("falling through") unpredictably or getting stuck
     let start = coords(params.start.into(), &params) + Vec2::new(MAIN_BODY_RADIUS, 0.);
 
-    let mesh = meshes.add(Circle::new(MAIN_BODY_RADIUS));
-    let material = materials.add(Color::srgba(0.8, 0.2, 0.15, 1.));
-
-    commands.spawn((
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-        RigidBody::Dynamic,
-        Transform::from_xyz(start.x, start.y, 0.),
-        Collider::ball(MAIN_BODY_RADIUS),
-        ColliderMassProperties::Density(MAIN_BODY_DENSITY),
-        Friction::new(params.friction),
-        MainBody
-    ));
+    spawn_main_body(&mut commands, &params, start, &mut meshes, &mut materials);
 
     commands.append(&mut command_queue);
 
