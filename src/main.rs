@@ -137,7 +137,7 @@ fn main() {
     })
     .insert_resource(BrachistochroneParams {
         start: Vector2::new(0., 10.),
-        end: Vector2::new(10., 0.),
+        end: Vector2::new(10., 2.),
         grid_resolution: 50,
         friction: 0.,
         ..Default::default()
